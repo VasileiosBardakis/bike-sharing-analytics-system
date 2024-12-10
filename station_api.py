@@ -1,5 +1,7 @@
 import flask
 from flask import jsonify
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 import requests
 import pandas as pd
 import logging
@@ -14,6 +16,14 @@ logger = logging.getLogger(__name__)
 #initialize Flask application
 app = flask.Flask(__name__)
 
+#configure rate limiter
+limiter = Limiter(
+    app=app,
+    key_func=get_remote_address,
+    default_limits=["100 per day", "30 per hour"],
+    storage_uri="memory://"
+)
+
 #bike Share API client
 class BikeShareAPIClient:
     def __init__(self, base_url="https://gbfs.citibikenyc.com/gbfs/2.3/gbfs.json"):
@@ -23,11 +33,6 @@ class BikeShareAPIClient:
         self.cached_urls = {}
         self.cache_expiry = 300  # 5 minutes cache expiration
         self.last_fetch_time = 0
-        
-        #rate limiting parameters
-        self.max_retries = 3
-        self.retry_delay = 5  #seconds between retries
-        self.rate_limit_delay = 60  #seconds to wait after rate limit error
 
     def _fetch_feed_urls(self):
         #check if cached URLs are still valid
@@ -59,26 +64,23 @@ class BikeShareAPIClient:
         
         except Timeout:
             #handle request timeout
-            logger.warning("Timeout fetching feed URLs. Retrying...")
-            time.sleep(self.retry_delay)
+            logger.error("Timeout fetching bike share feed URLs")
+            return None
         
         except ConnectionError:
             #handle network connection issues
             logger.error("Network connection error. Check internet connectivity.")
+            return None
         
         except HTTPError as e:
-            if e.response.status_code == 429:
-                #handle rate limiting
-                logger.warning("Rate limit exceeded. Waiting before retry.")
-                time.sleep(self.rate_limit_delay)
-            else:
-                logger.error(f"HTTP error occurred: {e}")
+            #catch specific HTTP errors
+            logger.error(f"HTTP error occurred while fetching feed URLs: {e}")
+            return None
         
         except RequestException as e:
             #catch any other request-related exceptions
-            logger.error(f"Request error: {e}")
-        
-        return None
+            logger.error(f"Unexpected request error: {e}")
+            return None
 
     def get_station_information(self):
         #fetch feed URLs
@@ -137,6 +139,7 @@ bike_share_client = BikeShareAPIClient()
 
 #route to retrieve station information
 @app.route('/station/information', methods=['GET'])
+@limiter.limit("15 per minute")
 def get_station_information():
     #fetch station information
     stations_df = bike_share_client.get_station_information()
@@ -146,6 +149,7 @@ def get_station_information():
         return stations_df.to_json(orient='records')
     else:
         #return error response
+        logger.error("Failed to retrieve station information")
         return jsonify({
             "error": "Unable to retrieve station information",
             "status": "500 Internal Server Error"
@@ -153,6 +157,7 @@ def get_station_information():
 
 #route to retrieve station status
 @app.route('/station/status', methods=['GET'])
+@limiter.limit("15 per minute")
 def get_station_status():
     #fetch station status
     stations_df = bike_share_client.get_station_status()
@@ -162,10 +167,21 @@ def get_station_status():
         return stations_df.to_json(orient='records')
     else:
         #return error response
+        logger.error("Failed to retrieve station status")
         return jsonify({
             "error": "Unable to retrieve station status",
             "status": "500 Internal Server Error"
         }), 500
+
+# Error handler for rate limiting
+@app.errorhandler(429)
+def ratelimit_handler(e):
+    # Log rate limit violations with client IP
+    logger.warning(f"Rate limit exceeded for IP: {get_remote_address()}")
+    return jsonify({
+        "error": "Too many requests. Please slow down.",
+        "status": "429 Too Many Requests"
+    }), 429
 
 #run the Flask application if script is executed directly
 if __name__ == '__main__':
