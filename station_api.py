@@ -31,14 +31,17 @@ class BikeShareAPIClient:
         self.base_url = base_url
         #caching mechanism to reduce unnecessary API calls
         self.cached_urls = {}
+        self.cached_station_info = None
+        self.cached_station_status = None
         self.cache_expiry = 300  # 5 minutes cache expiration
         self.last_fetch_time = 0
+        self.last_station_info_fetch = 0
+        self.last_station_status_fetch = 0
 
     def _fetch_feed_urls(self):
-        #check if cached URLs are still valid
+        #check if cached URLs are still valid, if they are return them if not fetch new URLs
         current_time = time.time()
-        if (self.cached_urls and 
-            current_time - self.last_fetch_time < self.cache_expiry):
+        if (self.cached_urls and current_time - self.last_fetch_time < self.cache_expiry):
             return self.cached_urls
         
         try:
@@ -82,7 +85,16 @@ class BikeShareAPIClient:
             logger.error(f"Unexpected request error: {e}")
             return None
 
+
     def get_station_information(self):
+        #check current time
+        current_time = time.time()
+        
+        #check if cached data is still valid
+        if (self.cached_station_info is not None and 
+            current_time - self.last_station_info_fetch < self.cache_expiry):
+            return self.cached_station_info
+        
         #fetch feed URLs
         urls = self._fetch_feed_urls()
         
@@ -101,6 +113,10 @@ class BikeShareAPIClient:
             #create DataFrame with specific columns
             df = pd.DataFrame(stations)[['station_id', 'name', 'lat', 'lon', 'capacity']]
             
+            #cache the result and update fetch time
+            self.cached_station_info = df
+            self.last_station_info_fetch = current_time
+            
             return df
         
         except Exception as e:
@@ -108,7 +124,16 @@ class BikeShareAPIClient:
             logger.error(f"Error fetching station information: {e}")
             return None
 
+
     def get_station_status(self):
+        #check current time
+        current_time = time.time()
+        
+        #check if cached data is still valid
+        if (self.cached_station_status is not None and 
+            current_time - self.last_station_status_fetch < self.cache_expiry):
+            return self.cached_station_status
+        
         #fetch feed URLs
         urls = self._fetch_feed_urls()
         
@@ -126,6 +151,10 @@ class BikeShareAPIClient:
             
             #create DataFrame with specific columns
             df = pd.DataFrame(stations)[['station_id', 'num_bikes_available', 'num_docks_available']]
+            
+            #cache the result and update fetch time
+            self.cached_station_status = df
+            self.last_station_status_fetch = current_time
             
             return df
         
