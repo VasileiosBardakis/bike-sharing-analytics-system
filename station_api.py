@@ -7,6 +7,9 @@ import pandas as pd
 import logging
 import time
 from requests.exceptions import RequestException, Timeout, ConnectionError, HTTPError
+from confluent_kafka import Producer
+import json
+
 
 #configure logging
 logging.basicConfig(level=logging.INFO, 
@@ -16,6 +19,12 @@ logger = logging.getLogger(__name__)
 #initialize Flask application
 app = flask.Flask(__name__)
 
+#initialize Kafka producer
+producer_config = {
+    'bootstrap.servers': 'localhost:9092',  # Replace with your Kafka broker
+}
+producer = Producer(producer_config)
+
 #configure rate limiter
 limiter = Limiter(
     app=app,
@@ -23,6 +32,20 @@ limiter = Limiter(
     default_limits=["100 per day", "30 per hour"],
     storage_uri="memory://"
 )
+
+#Function to send the message to kafka
+def send_to_kafka(topic, data):
+    try:
+        # Convert the data (list of dictionaries) to JSON string for kafka
+        message = json.dumps(data)
+        
+        # Send the message to the Kafka topic
+        producer.produce(topic, value=message)
+        producer.flush()  # Ensure all messages are sent
+        logger.info(f"Successfully sent data to Kafka topic: {topic}")
+    except Exception as e:
+        # Log any errors that occur while sending to Kafka
+        logger.error(f"Error sending data to Kafka topic '{topic}': {e}")
 
 #bike Share API client
 class BikeShareAPIClient:
@@ -174,8 +197,18 @@ def get_station_information():
     stations_df = bike_share_client.get_station_information()
     
     if stations_df is not None:
-        #convert DataFrame to JSON for API response
-        return stations_df.to_json(orient='records')
+        try:
+            #Send station information to Kafka using the send_to_kafka function
+            send_to_kafka('station_information', stations_df.to_dict(orient='records'))
+            #Convert DataFrame to JSON for API response
+            return stations_df.to_json(orient='records')
+        except Exception as e:
+            # Log any errors during Kafka message production
+            logger.error(f"Error sending station information to Kafka: {e}")
+            return jsonify({
+                "error": "Failed to send station information to Kafka",
+                "status": "500 Internal Server Error"
+            }), 500
     else:
         #return error response
         logger.error("Failed to retrieve station information")
