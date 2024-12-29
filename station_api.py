@@ -50,13 +50,19 @@ def send_to_kafka(topic, data):
 
 def send_status_to_kafka(topic, data):
     try:
-        # Convert the entire DataFrame (or data object) to JSON
-        message = json.dumps(data)  # Assuming `data` is a dictionary or JSON-compatible
-        producer.produce(topic, value=message.encode('utf-8'))
+        records = json.loads(data)
+        
+        # Send each record as an individual Kafka message
+        for record in records:
+            message = json.dumps(record)  # Serialize the record to JSON
+            producer.produce(topic, value=message.encode('utf-8'))  # Send to Kafka
+        
+        # Ensure all messages are sent
         producer.flush()
         logger.info(f"Successfully sent station status to Kafka topic: {topic}")
     except Exception as e:
         logger.error(f"Error sending station status to Kafka topic '{topic}': {e}")
+
 
 
 #bike Share API client
