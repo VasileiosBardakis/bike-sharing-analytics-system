@@ -36,16 +36,28 @@ limiter = Limiter(
 #Function to send the message to kafka
 def send_to_kafka(topic, data):
     try:
-        # Convert the data (list of dictionaries) to JSON string for kafka
-        message = json.dumps(data)
+        # Send each record in the data as a newline-delimited JSON message
+        for record in data:
+            message = json.dumps(record)  # Convert each record to JSON string
+            producer.produce(topic, value=message.encode('utf-8'))  # Convert JSON string to bytes
         
-        # Send the message to the Kafka topic
-        producer.produce(topic, value=message)
-        producer.flush()  # Ensure all messages are sent
+        # Ensure all messages are sent
+        producer.flush()
         logger.info(f"Successfully sent data to Kafka topic: {topic}")
     except Exception as e:
         # Log any errors that occur while sending to Kafka
         logger.error(f"Error sending data to Kafka topic '{topic}': {e}")
+
+def send_status_to_kafka(topic, data):
+    try:
+        # Convert the entire DataFrame (or data object) to JSON
+        message = json.dumps(data)  # Assuming `data` is a dictionary or JSON-compatible
+        producer.produce(topic, value=message.encode('utf-8'))
+        producer.flush()
+        logger.info(f"Successfully sent station status to Kafka topic: {topic}")
+    except Exception as e:
+        logger.error(f"Error sending station status to Kafka topic '{topic}': {e}")
+
 
 #bike Share API client
 class BikeShareAPIClient:
@@ -225,8 +237,18 @@ def get_station_status():
     stations_df = bike_share_client.get_station_status()
     
     if stations_df is not None:
-        #convert DataFrame to JSON for API response
-        return stations_df.to_json(orient='records')
+        try:
+            # Convert the DataFrame to a JSON string for Kafka
+            send_status_to_kafka('station_status', stations_df.to_json(orient='records'))
+            #convert DataFrame to JSON for API response
+            return stations_df.to_json(orient='records')
+        except  Exception as e:
+            # Log any errors during Kafka message production
+            logger.error(f"Error sending station status to Kafka: {e}")
+            return jsonify({
+                "error": "Failed to send station status to Kafka",
+                "status": "500 Internal Server Error"
+            }), 500
     else:
         #return error response
         logger.error("Failed to retrieve station status")
