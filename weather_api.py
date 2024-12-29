@@ -6,6 +6,8 @@ import requests
 import time
 import logging
 from requests.exceptions import RequestException, Timeout, ConnectionError, HTTPError
+from confluent_kafka import Producer
+import json
 
 #configure logging
 logging.basicConfig(level=logging.INFO, 
@@ -15,6 +17,12 @@ logger = logging.getLogger(__name__)
 #initialize Flask application
 app = flask.Flask(__name__)
 
+#initialize Kafka producer
+producer_config = {
+    'bootstrap.servers': 'localhost:9092',  # Replace with your Kafka broker
+}
+producer = Producer(producer_config)
+
 #configure rate limiter
 limiter = Limiter(
     app=app,
@@ -22,6 +30,16 @@ limiter = Limiter(
     default_limits=["100 per day", "30 per hour"],
     storage_uri="memory://"
 )
+
+def send_weather_to_kafka(topic, data):
+    try:
+        # Convert data (dictionary) to JSON string
+        message = json.dumps(data)  # Ensure data is serializable
+        producer.produce(topic, value=message.encode('utf-8'))  # Send JSON as bytes
+        producer.flush()  # Ensure the message is sent immediately
+        logger.info(f"Successfully sent weather data to Kafka topic: {topic}")
+    except Exception as e:
+        logger.error(f"Error sending weather data to Kafka topic '{topic}': {e}")
 
 #openWeather API configuration
 class OpenWeatherAPIClient:
@@ -132,7 +150,16 @@ def get_weather():
     
     #check if weather data was successfully retrieved
     if weather_data:
-        return jsonify(weather_data)
+        try:
+            send_weather_to_kafka('weather_data', weather_data)
+            return jsonify(weather_data)
+        except Exception as e:
+            # Log any errors during Kafka message production
+            logger.error(f"Error sending weather data to Kafka: {e}")
+            return jsonify({
+                "error": "Failed to send weather data to Kafka",
+                "status": "500 Internal Server Error"
+            }), 500
     else:
         #return error if data retrieval failed
         logger.error(f"Failed to retrieve weather data for coordinates: {latitude}, {longitude}")

@@ -21,7 +21,7 @@ app = flask.Flask(__name__)
 
 #initialize Kafka producer
 producer_config = {
-    'bootstrap.servers': 'localhost:9092',  # Replace with your Kafka broker
+    'bootstrap.servers': 'localhost:9092',
 }
 producer = Producer(producer_config)
 
