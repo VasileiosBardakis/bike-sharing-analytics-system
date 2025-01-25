@@ -17,11 +17,6 @@ logger = logging.getLogger(__name__)
 #initialize Flask application
 app = flask.Flask(__name__)
 
-#initialize Kafka producer
-producer_config = {
-    'bootstrap.servers': 'localhost:9092',  # Replace with your Kafka broker
-}
-producer = Producer(producer_config)
 
 #configure rate limiter
 limiter = Limiter(
@@ -31,12 +26,35 @@ limiter = Limiter(
     storage_uri="memory://"
 )
 
+# Lazy initialization of Kafka producer
+producer = None
+
+def get_producer():
+    global producer
+    if producer is None:
+        try:
+            producer_config = {
+                'bootstrap.servers': 'localhost:9092',
+                'socket.timeout.ms': 10000,
+                'retries': 3,
+            }
+            producer = Producer(producer_config)
+            logger.info("Kafka producer initialized successfully.")
+        except Exception as e:
+            logger.error(f"Error initializing Kafka producer: {e}")
+            producer = None  # Ensure producer is None if initialization fails
+    return producer
+
 def send_weather_to_kafka(topic, data):
+    kafka_producer = get_producer()
+    if kafka_producer is None:
+        logger.warning("Kafka producer is not available. Skipping message production.")
+        return
     try:
         # Convert data (dictionary) to JSON string
         message = json.dumps(data)  # Ensure data is serializable
-        producer.produce(topic, value=message.encode('utf-8'))  # Send JSON as bytes
-        producer.flush()  # Ensure the message is sent immediately
+        kafka_producer.produce(topic, value=message.encode('utf-8'))  # Send JSON as bytes
+        kafka_producer.flush()  # Ensure the message is sent immediately
         logger.info(f"Successfully sent weather data to Kafka topic: {topic}")
     except Exception as e:
         logger.error(f"Error sending weather data to Kafka topic '{topic}': {e}")

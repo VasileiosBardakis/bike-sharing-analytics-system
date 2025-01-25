@@ -19,11 +19,7 @@ logger = logging.getLogger(__name__)
 #initialize Flask application
 app = flask.Flask(__name__)
 
-#initialize Kafka producer
-producer_config = {
-    'bootstrap.servers': 'localhost:9092',
-}
-producer = Producer(producer_config)
+
 
 #configure rate limiter
 limiter = Limiter(
@@ -33,32 +29,60 @@ limiter = Limiter(
     storage_uri="memory://"
 )
 
+# Lazy initialization of Kafka producer
+producer = None
+
+def get_producer():
+    global producer
+    if producer is None:
+        try:
+            producer_config = {
+                'bootstrap.servers': 'localhost:9092',
+                'socket.timeout.ms': 10000,
+                'retries': 3,
+            }
+            producer = Producer(producer_config)
+            logger.info("Kafka producer initialized successfully.")
+        except Exception as e:
+            logger.error(f"Error initializing Kafka producer: {e}")
+            producer = None  # Ensure producer is None if initialization fails
+    return producer
+
+
 #Function to send the message to kafka
 def send_to_kafka(topic, data):
+    kafka_producer = get_producer()
+    if kafka_producer is None:
+        logger.warning("Kafka producer is not available. Skipping message production.")
+        return
     try:
         # Send each record in the data as a newline-delimited JSON message
         for record in data:
             message = json.dumps(record)  # Convert each record to JSON string
-            producer.produce(topic, value=message.encode('utf-8'))  # Convert JSON string to bytes
+            kafka_producer.produce(topic, value=message.encode('utf-8'))  # Convert JSON string to bytes
         
         # Ensure all messages are sent
-        producer.flush()
+        kafka_producer.flush()
         logger.info(f"Successfully sent data to Kafka topic: {topic}")
     except Exception as e:
         # Log any errors that occur while sending to Kafka
         logger.error(f"Error sending data to Kafka topic '{topic}': {e}")
 
 def send_status_to_kafka(topic, data):
+    kafka_producer = get_producer()
+    if kafka_producer is None:
+        logger.warning("Kafka producer is not available. Skipping message production.")
+        return
     try:
         records = json.loads(data)
         
         # Send each record as an individual Kafka message
         for record in records:
             message = json.dumps(record)  # Serialize the record to JSON
-            producer.produce(topic, value=message.encode('utf-8'))  # Send to Kafka
+            kafka_producer.produce(topic, value=message.encode('utf-8'))  # Send to Kafka
         
         # Ensure all messages are sent
-        producer.flush()
+        kafka_producer.flush()
         logger.info(f"Successfully sent station status to Kafka topic: {topic}")
     except Exception as e:
         logger.error(f"Error sending station status to Kafka topic '{topic}': {e}")
