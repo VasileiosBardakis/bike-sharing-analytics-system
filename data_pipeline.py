@@ -3,11 +3,17 @@ import logging
 import time
 import json
 from typing import Dict, List, Union, Optional
+import pandas as pd
+import os
 
 #logging
 logging.basicConfig(level=logging.INFO, 
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+#directory to store Parquet files
+PARQUET_DIR = "data_parquet"
+os.makedirs(PARQUET_DIR, exist_ok=True)  #Create if not exist
 
 class DataValidationError(Exception):
     """Custom exception for data validation errors"""
@@ -218,6 +224,32 @@ def fetch_station_status() -> Optional[List[Dict]]:
         logger.error(f"Station status retrieval error: {e}")
         return None
 
+def save_to_parquet(data: Union[Dict, List[Dict]], file_name: str) -> None:
+    """
+    Save data to a Parquet file. If the file already exists, append the new data.
+    """
+    try:
+        # Convert data to a DataFrame
+        new_data_df = pd.DataFrame(data) if isinstance(data, list) else pd.DataFrame([data])
+        
+        # Define the Parquet file path
+        parquet_path = os.path.join(PARQUET_DIR, f"{file_name}.parquet")
+        
+        # Check if the Parquet file already exists
+        if os.path.exists(parquet_path):
+            # Load existing data
+            existing_data_df = pd.read_parquet(parquet_path)
+            # Append new data to existing data
+            combined_df = pd.concat([existing_data_df, new_data_df], ignore_index=True)
+        else:
+            # If the file doesn't exist, use the new data as is
+            combined_df = new_data_df
+        
+        # Save the combined DataFrame to Parquet
+        combined_df.to_parquet(parquet_path, engine='pyarrow')
+    except Exception as e:
+        logger.error(f"Error saving data to Parquet file: {e}")
+
 def main():
     """
     Main function to demonstrate data pipeline with validation
@@ -240,6 +272,7 @@ def main():
                 print(f"Precipitation: {weather_data['precipitation']} mm")
                 print(f"Wind Speed: {weather_data['wind_speed']} m/s")
                 print(f"Clouds: {weather_data['clouds']}%")
+                save_to_parquet(weather_data, "weather_data")
             
             # Fetch and validate station information
             stations_info = fetch_station_information()
@@ -251,6 +284,7 @@ def main():
                     print(f"Latitude: {station['lat']}")
                     print(f"Longitude: {station['lon']}")
                     print(f"Capacity: {station['capacity']}\n")
+                    save_to_parquet(stations_info, "stations_info")
             
             # Fetch and validate station status
             stations_status = fetch_station_status()
@@ -260,6 +294,7 @@ def main():
                     print(f"Station ID: {station['station_id']}")
                     print(f"Bikes Available: {station['num_bikes_available']}")
                     print(f"Docks Available: {station['num_docks_available']}\n")
+                    save_to_parquet(stations_status, "stations_status") 
         
         except Exception as e:
             logger.error(f"Unexpected error: {e}")
