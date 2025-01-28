@@ -215,7 +215,7 @@ class BikeShareAPIClient:
             stations = response.json()["data"]["stations"]
             
             #create DataFrame with specific columns
-            df = pd.DataFrame(stations)[['station_id', 'num_bikes_available', 'num_docks_available']]
+            df = pd.DataFrame(stations)[['station_id', 'num_bikes_available', 'num_docks_available', 'last_reported']]
             
             #cache the result and update fetch time
             self.cached_station_status = df

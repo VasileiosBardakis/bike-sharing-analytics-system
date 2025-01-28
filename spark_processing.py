@@ -1,7 +1,7 @@
 import time
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
-from pyspark.sql.functions import hour
+from pyspark.sql.functions import from_unixtime, col, date_format, hour
 
 spark = SparkSession.builder \
     .appName("BikeSharingAnalysis") \
@@ -20,13 +20,13 @@ stations_status_df = spark.read.parquet("data_parquet/stations_status.parquet")
 joined_df = stations_info_df.join(stations_status_df, on="station_id", how="inner")
 
 #Calculate utilization rate per station
-utilization_df = joined_df.withColumn(
+joined_df = joined_df.withColumn(
     "utilization_rate",
     (F.col("capacity") - F.col("num_docks_available")) / F.col("capacity")
 )
 
 #Calculate total utilization rate across the city
-total_utilization = utilization_df.agg(
+total_utilization = joined_df.agg(
     F.sum(F.col("capacity") - F.col("num_docks_available")).alias("total_bikes_used"),
     F.sum("capacity").alias("total_capacity")
 ).withColumn(
@@ -34,25 +34,36 @@ total_utilization = utilization_df.agg(
     F.col("total_bikes_used") / F.col("total_capacity")
 )
 
-#Show all data
-print("Weather Data:")
+# Convert timestamp as 'yyyy-MM-dd HH'
+weather_df = weather_df.withColumn(
+    "time", date_format(from_unixtime(col("timestamp")), "yyyy-MM-dd HH")
+)
+
+#Convert last_reported timestamp
+joined_df = joined_df.withColumn(
+    "time", date_format(from_unixtime(col("last_reported")), "yyyy-MM-dd HH")
+)
+
+#Join DataFrames on col time lat lon
+joined_wj_df = joined_df.join(weather_df, on=['time', 'lat', 'lon'],how="inner")
+
+# #Show all data
+# print("Weather Data:")
 weather_df.show()
 
-print("Station Information:")
 stations_info_df.show()
 
-print("Station Status:")
-stations_status_df.show()
+# stations_status_df.show()
 
-print("Joined DFs:")
 joined_df.show()
 
-print("Station Utilization rate:")
-utilization_df.select("station_id", "name", "utilization_rate").show()
+#print("Station Utilization rate:")
+#joined_df.select("station_id", "name", "utilization_rate").show()
 
-print("City Utilization rate:")
-total_utilization.show()
+#print("City Utilization rate:")
+#total_utilization.show()
 
+joined_wj_df.show()
 
 time.sleep(600)
 
