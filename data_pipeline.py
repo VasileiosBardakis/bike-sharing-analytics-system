@@ -292,8 +292,10 @@ def fetch_station_status() -> Optional[List[Dict]]:
 
 def save_to_parquet(data: Union[Dict, List[Dict]], file_name: str) -> None:
     """
-    Save data to a Parquet file. If the file already exists, append the new data.
-    Removes duplicates based on timestamp, latitude, and longitude.
+    Save data to a Parquet file.
+    If the file already exists, append the new data.
+    Skips stations that already exist in the file.
+    Removes duplicates based on latitude and longitude for weather data.
     """
     try:
         # Convert data to a DataFrame
@@ -307,11 +309,21 @@ def save_to_parquet(data: Union[Dict, List[Dict]], file_name: str) -> None:
             # Load existing data
             existing_data_df = pd.read_parquet(parquet_path)
             
+            # If this is station data (has station_id column), filter out existing stations
+            if 'station_id' in new_data_df.columns:
+                existing_station_ids = set(existing_data_df['station_id'])
+                new_data_df = new_data_df[~new_data_df['station_id'].isin(existing_station_ids)]
+                
+                # If all stations already exist, return early
+                if len(new_data_df) == 0:
+                    logger.info("All stations already exist in the file. No new data to add.")
+                    return
+            
             # Ensure both DataFrames have the same columns
             missing_cols = set(existing_data_df.columns) - set(new_data_df.columns)
             for col in missing_cols:
                 new_data_df[col] = None
-                
+            
             missing_cols = set(new_data_df.columns) - set(existing_data_df.columns)
             for col in missing_cols:
                 existing_data_df[col] = None
@@ -325,19 +337,18 @@ def save_to_parquet(data: Union[Dict, List[Dict]], file_name: str) -> None:
             # If the file doesn't exist, use the new data as is
             combined_df = new_data_df
         
-        # Drop duplicates based on timestamp, lat, and lon
-        if all(col in combined_df.columns for col in ['timestamp', 'lat', 'lon']):
+        # Drop duplicates based on lat and lon for weather data
+        if all(col in combined_df.columns for col in ['lat', 'lon']):
             combined_df = combined_df.drop_duplicates(
-                subset=['timestamp', 'lat', 'lon'],
+                subset=['lat', 'lon'],
                 keep='last'
             )
         
         # Save the deduplicated DataFrame to Parquet
-        combined_df.to_parquet(parquet_path, engine='pyarrow')
+        combined_df.to_parquet(parquet_path, engine='pyarrow', index=False)
         
     except Exception as e:
         logger.error(f"Error saving data to Parquet file: {e}")
-        # Print more detailed error information
 
 def main():
     """
@@ -367,7 +378,7 @@ def main():
             stations_info = fetch_station_information()
             if stations_info:
                 print("\nStation Information (first 5 stations):")
-                for station in stations_info[:5]:
+                for station in stations_info:
                     print(f"Station ID: {station['station_id']}")
                     print(f"Name: {station['name']}")
                     print(f"Latitude: {station['lat']}")
@@ -380,7 +391,7 @@ def main():
             stations_status = fetch_station_status()
             if stations_status:
                 print("\nStation Status (first 5 stations):")
-                for station in stations_status[:5]:
+                for station in stations_status:
                     print(f"Station ID: {station['station_id']}")
                     print(f"Bikes Available: {station['num_bikes_available']}")
                     print(f"Docks Available: {station['num_docks_available']}\n")
