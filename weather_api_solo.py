@@ -29,31 +29,31 @@ class OpenWeatherAPIClient:
         self.api_key = api_key
         self.base_url = base_url
         
-        # Caching mechanism
+        #caching mechanism
         self.cached_weather_data = {}
         self.cache_expiry = 300  # 5 minutes cache expiration
 
     def get_weather(self, latitude, longitude):
-        # Create a unique cache key based on coordinates
+        #create a unique cache key based on coordinates
         cache_key = f"{latitude},{longitude}"
         current_time = time.time()
         
-        # Check if cached data exists and is still valid
+        #check if cached data exists and is still valid
         if (cache_key in self.cached_weather_data and 
             current_time - self.cached_weather_data[cache_key]['timestamp'] < self.cache_expiry):
             return self.cached_weather_data[cache_key]
         
-        # Construct API request URL
+        #construct API request URL
         url = f'{self.base_url}?lat={latitude}&lon={longitude}&appid={self.api_key}&units=metric'
         
         try:
-            # Send GET request with timeout
+            #send GET request with timeout
             response = requests.get(url, timeout=10)
             
-            # Check for specific HTTP errors
+            #check for specific HTTP errors
             response.raise_for_status()
             
-            # Parse and extract weather data
+            #parse and extract weather data
             data = response.json()
             weather_info = {
                 'temperature': data['main']['temp'],
@@ -63,37 +63,37 @@ class OpenWeatherAPIClient:
                 'timestamp': current_time
             }
             
-            # Cache the weather data
+            #cache the weather data
             self.cached_weather_data[cache_key] = weather_info
             
             return weather_info
         
         except Timeout:
-            # Handle request timeout
+            #handle request timeout
             logger.error("Request timed out while fetching weather data")
             return None
         
         except ConnectionError:
-            # Handle network connection issues
+            #handle network connection issues
             logger.error("Network connection error. Check internet connectivity.")
             return None
         
         except HTTPError as e:
             if e.response.status_code == 401:
-                # Handle API key error
+                #handle API key error
                 logger.critical("Invalid OpenWeather API key. Authentication failed.")
                 return None
             elif e.response.status_code == 404:
-                # Handle location not found
+                #handle location not found
                 logger.error(f"Invalid coordinates: {latitude}, {longitude}")
                 return None
             else:
-                # Handle other HTTP errors
+                #handle other HTTP errors
                 logger.error(f"HTTP error occurred: {e}")
                 return None
         
         except RequestException as e:
-            # Catch any other request-related exceptions
+            #catch any other request-related exceptions
             logger.error(f"Unexpected request error: {e}")
             return None
 
@@ -141,7 +141,7 @@ def get_weather():
             "status": "500 Internal Server Error"
         }), 500
 
-# Error handler for rate limiting
+#error handler for rate limiting
 @app.errorhandler(429)
 def ratelimit_handler(e):
     # Log rate limit violations with client IP
