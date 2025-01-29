@@ -232,7 +232,9 @@ def main():
             longitude = input("Enter Longitude: ")
             
             #fetch and validate weather data
+            start_time = time.time()  #measure time it takes for the api to fetch the data
             weather_data = fetch_weather_data(latitude, longitude)
+            weather_time = time.time() - start_time
             if weather_data:
                 print("\nWeather Information:")
                 print(f"Temperature: {weather_data['temperature']}°C")
@@ -241,7 +243,9 @@ def main():
                 print(f"Clouds: {weather_data['clouds']}%")
             
             #fetch and validate station information
+            start_time = time.time()   #measure time it takes for the api to fetch the data
             stations_info = fetch_station_information()
+            station_info_time = time.time() - start_time
             if stations_info:
                 print("\nStation Information (first 5 stations):")
                 for station in stations_info[:5]:
@@ -252,7 +256,9 @@ def main():
                     print(f"Capacity: {station['capacity']}\n")
             
             #fetch and validate station status
-            stations_status = fetch_station_status()
+            start_time = time.time()
+            stations_status = fetch_station_status()    #measure time it takes for the api to fetch the data
+            station_status_time = time.time() - start_time
             if stations_status:
                 print("\nStation Status (first 5 stations):")
                 for station in stations_status[:5]:
@@ -260,6 +266,10 @@ def main():
                     print(f"Bikes Available: {station['num_bikes_available']}")
                     print(f"Docks Available: {station['num_docks_available']}\n")
         
+            print(f"\nResponse times:")
+            print(f"Weather API: {weather_time:.2f} seconds")
+            print(f"Station Info API: {station_info_time:.2f} seconds")
+            print(f"Station Status API: {station_status_time:.2f} seconds")
         except Exception as e:
             logger.error(f"Unexpected error: {e}")
 
